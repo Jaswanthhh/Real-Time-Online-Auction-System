@@ -1,5 +1,5 @@
 import express from 'express';
-import http from 'http';
+import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import { handleAuctionWS, auctions } from './auction.js';
@@ -8,22 +8,19 @@ import { handleAuctionWS, auctions } from './auction.js';
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app);
+const port = process.env.PORT || 4000;
 
-// WebSocket server
-const wss = new WebSocketServer({ server, path: process.env.WS_PATH || '/ws' });
-wss.on('connection', (ws) => handleAuctionWS(ws, wss));
-
-// Express REST API
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-app.get('/', (req, res) => res.send('Auction backend is running!'));
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 // Get all auctions
 app.get('/auctions', (req, res) => {
   res.json(auctions);
 });
 
-// Get specific auction by ID
+// Get specific auction
 app.get('/auctions/:id', (req, res) => {
   const auction = auctions[req.params.id];
   if (!auction) {
@@ -32,17 +29,27 @@ app.get('/auctions/:id', (req, res) => {
   res.json(auction);
 });
 
-// Get all bids for an auction
+// Get bids for specific auction
 app.get('/auctions/:id/bids', (req, res) => {
   const auction = auctions[req.params.id];
   if (!auction) {
     return res.status(404).json({ error: 'Auction not found' });
   }
-  res.json(auction.bids || []);
+  res.json(auction.bids);
 });
 
-const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`Auction backend running on http://localhost:${PORT}`);
-  console.log(`WebSocket server running on ws://localhost:${PORT}${process.env.WS_PATH || '/ws'}`);
+// Create HTTP server
+const server = createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocketServer({ server });
+
+// Handle WebSocket connections
+wss.on('connection', (ws) => {
+  handleAuctionWS(ws, wss);
+});
+
+// Start server
+server.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 }); 
