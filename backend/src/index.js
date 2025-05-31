@@ -10,6 +10,11 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 4000;
 
+// Root route
+app.get('/', (req, res) => {
+  res.send('Auction backend is running!');
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
