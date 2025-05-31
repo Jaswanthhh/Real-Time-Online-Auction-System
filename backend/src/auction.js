@@ -4,7 +4,7 @@ import Redis from 'ioredis';
 
 const redis = new Redis(process.env.REDIS_URL);
 
-// In-memory auction state (for demo; use DB in production)
+// In-memory auction state
 export const auctions = {};
 
 // Broadcast to all clients
@@ -58,8 +58,37 @@ export function handleAuctionWS(ws, wss) {
     try {
       const data = JSON.parse(msg);
       if (data.type === 'new_bid') {
-        // Add bid to queue
-        await bidQueue.add('bid', { auctionId: data.payload.auctionId, bid: data.payload.bid });
+        const { auctionId, bid } = data.payload;
+        
+        // Process bid
+        const ok = await consensusSimulate(bid);
+        if (!ok) {
+          // Bid rejected
+          broadcast(wss, { 
+            type: 'bid_rejected', 
+            payload: { 
+              auctionId, 
+              bidId: bid.id, 
+              status: 'rejected' 
+            } 
+          });
+          return;
+        }
+
+        // Accept bid
+        if (!auctions[auctionId]) auctions[auctionId] = { bids: [] };
+        auctions[auctionId].bids.unshift({ ...bid, status: 'accepted' });
+        
+        // Broadcast accepted bid
+        broadcast(wss, { 
+          type: 'bid_accepted', 
+          payload: { 
+            auctionId, 
+            bidId: bid.id, 
+            status: 'accepted', 
+            bid 
+          } 
+        });
       }
       // Add more message types as needed
     } catch (e) {
