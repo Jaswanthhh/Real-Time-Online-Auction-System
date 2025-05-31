@@ -1,27 +1,5 @@
-// In-memory auction state with sample data
-export const auctions = {
-  "auction1": {
-    id: "auction1",
-    title: "Vintage Watch",
-    description: "A beautiful vintage watch from 1950",
-    startingPrice: 1000,
-    currentPrice: 1200,
-    bids: [
-      { id: "bid1", amount: 1200, userId: "user1", timestamp: new Date().toISOString(), status: "accepted" },
-      { id: "bid2", amount: 1100, userId: "user2", timestamp: new Date().toISOString(), status: "accepted" }
-    ]
-  },
-  "auction2": {
-    id: "auction2",
-    title: "Antique Vase",
-    description: "Ming Dynasty vase in excellent condition",
-    startingPrice: 5000,
-    currentPrice: 5500,
-    bids: [
-      { id: "bid3", amount: 5500, userId: "user3", timestamp: new Date().toISOString(), status: "accepted" }
-    ]
-  }
-};
+// In-memory auction state
+export const auctions = {};
 
 // Broadcast to all clients
 function broadcast(wss, data) {
@@ -46,47 +24,103 @@ export function handleAuctionWS(ws, wss) {
   ws.on('message', async (msg) => {
     try {
       const data = JSON.parse(msg);
-      if (data.type === 'new_bid') {
-        const { auctionId, bid } = data.payload;
-        
-        // Process bid
-        const ok = await consensusSimulate(bid);
-        if (!ok) {
-          // Bid rejected
-          broadcast(wss, { 
-            type: 'bid_rejected', 
-            payload: { 
-              auctionId, 
-              bidId: bid.id, 
-              status: 'rejected' 
-            } 
+      
+      switch (data.type) {
+        case 'create_auction':
+          const { auction } = data.payload;
+          auctions[auction.id] = {
+            ...auction,
+            currentPrice: auction.startingPrice,
+            bids: [],
+            createdAt: new Date().toISOString()
+          };
+          broadcast(wss, {
+            type: 'auction_created',
+            payload: { auction: auctions[auction.id] }
           });
-          return;
-        }
+          break;
 
-        // Accept bid
-        if (!auctions[auctionId]) auctions[auctionId] = { bids: [] };
-        auctions[auctionId].bids.unshift({ ...bid, status: 'accepted' });
-        
-        // Update current price
-        if (bid.amount > auctions[auctionId].currentPrice) {
+        case 'new_bid':
+          const { auctionId, bid } = data.payload;
+          
+          // Check if auction exists
+          if (!auctions[auctionId]) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Auction not found'
+            }));
+            return;
+          }
+
+          // Check if bid is higher than current price
+          if (bid.amount <= auctions[auctionId].currentPrice) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Bid must be higher than current price'
+            }));
+            return;
+          }
+
+          // Process bid
+          const ok = await consensusSimulate(bid);
+          if (!ok) {
+            broadcast(wss, {
+              type: 'bid_rejected',
+              payload: {
+                auctionId,
+                bidId: bid.id,
+                status: 'rejected'
+              }
+            });
+            return;
+          }
+
+          // Accept bid
+          auctions[auctionId].bids.unshift({
+            ...bid,
+            timestamp: new Date().toISOString(),
+            status: 'accepted'
+          });
+          
+          // Update current price
           auctions[auctionId].currentPrice = bid.amount;
-        }
-        
-        // Broadcast accepted bid
-        broadcast(wss, { 
-          type: 'bid_accepted', 
-          payload: { 
-            auctionId, 
-            bidId: bid.id, 
-            status: 'accepted', 
-            bid 
-          } 
-        });
+          
+          // Broadcast accepted bid
+          broadcast(wss, {
+            type: 'bid_accepted',
+            payload: {
+              auctionId,
+              bidId: bid.id,
+              status: 'accepted',
+              bid: auctions[auctionId].bids[0]
+            }
+          });
+          break;
+
+        case 'get_auctions':
+          ws.send(JSON.stringify({
+            type: 'auctions_list',
+            payload: { auctions }
+          }));
+          break;
+
+        default:
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Unknown message type'
+          }));
       }
     } catch (e) {
-      ws.send(JSON.stringify({ type: 'error', message: e.message }));
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: e.message
+      }));
     }
   });
-  ws.send(JSON.stringify({ type: 'connected' }));
+
+  // Send initial connection success message
+  ws.send(JSON.stringify({
+    type: 'connected',
+    payload: { message: 'Connected to auction server' }
+  }));
 } 
