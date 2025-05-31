@@ -3,11 +3,13 @@ services:
     name: auction-backend
     env: node
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: npm run start
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
       - key: REDIS_URL
-        sync: false 
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true 
