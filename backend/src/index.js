@@ -17,8 +17,28 @@ wss.on('connection', (ws) => handleAuctionWS(ws, wss));
 // Express REST API
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/', (req, res) => res.send('Auction backend is running!'));
+
+// Get all auctions
 app.get('/auctions', (req, res) => {
   res.json(auctions);
+});
+
+// Get specific auction by ID
+app.get('/auctions/:id', (req, res) => {
+  const auction = auctions[req.params.id];
+  if (!auction) {
+    return res.status(404).json({ error: 'Auction not found' });
+  }
+  res.json(auction);
+});
+
+// Get all bids for an auction
+app.get('/auctions/:id/bids', (req, res) => {
+  const auction = auctions[req.params.id];
+  if (!auction) {
+    return res.status(404).json({ error: 'Auction not found' });
+  }
+  res.json(auction.bids || []);
 });
 
 const PORT = process.env.PORT || 4000;
